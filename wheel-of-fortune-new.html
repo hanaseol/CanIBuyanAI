@@ -144,6 +144,57 @@
                     <h4>Used Letters:</h4>
                     <div class="used-letters" id="usedLetters"></div>
                 </section>
+
+                <!-- Strategy Advisor Panel -->
+                <section class="strategy-advisor-section">
+                    <h4>💡 Strategy Advisor</h4>
+                    <div class="strategy-panel" id="strategyPanel">
+                        <div class="strategy-recommendation">
+                            <div class="recommendation-header">
+                                <span class="recommendation-action" id="recommendedAction">SPIN</span>
+                                <span class="confidence-level" id="confidenceLevel">High Confidence</span>
+                            </div>
+                            <div class="recommendation-reasoning" id="recommendationReasoning">
+                                <ul id="reasoningList"></ul>
+                            </div>
+                        </div>
+                        
+                        <div class="strategy-stats">
+                            <div class="stat-group">
+                                <h5>Wheel Statistics</h5>
+                                <div class="stat-item">
+                                    <span class="stat-label">Bankrupt Chance:</span>
+                                    <span class="stat-value" id="bankruptChance">8.3%</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Lose Turn Chance:</span>
+                                    <span class="stat-value" id="loseTurnChance">4.2%</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Expected Spin Value:</span>
+                                    <span class="stat-value" id="expectedSpinValue">$425</span>
+                                </div>
+                            </div>
+                            
+                            <div class="stat-group">
+                                <h5>Letter Suggestions</h5>
+                                <div class="letter-suggestions">
+                                    <div class="consonant-suggestions">
+                                        <span class="suggestion-label">Best Consonants:</span>
+                                        <div class="suggested-letters" id="suggestedConsonants">
+                                            <span class="letter-suggestion">T (85%)</span>
+                                            <span class="letter-suggestion">R (72%)</span>
+                                        </div>
+                                    </div>
+                                    <div class="vowel-suggestion">
+                                        <span class="suggestion-label">Best Vowel:</span>
+                                        <span class="suggested-vowel" id="suggestedVowel">E (78%)</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
             </main>
 
             <!-- Game Status -->
@@ -154,6 +205,7 @@
     </div>
 
     <script src="puzzles.js"></script>
+    <script src="money_optimizer.js"></script>
     <script src="script-new.js"></script>
 </body>
 </html>

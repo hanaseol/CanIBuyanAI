@@ -20,10 +20,13 @@ class WheelOfFortuneGame {
             aiStrategy: 'morse',
             totalRounds: 3
         };
-        this.backendUrl = window.location.origin.replace(':12000', ':8083'); // Backend on port 8083
+        this.backendUrl = window.location.origin.replace(':12000', ':12001'); // Backend on port 12001
         
         // Initialize the new puzzle manager
         this.puzzleManager = new PuzzleManager();
+        
+        // Initialize money optimizer
+        this.moneyOptimizer = new MoneyOptimizer();
         
         // Wheel configuration (24 sections, matching create_accurate_wheel.py)
         // 0 = LOSE TURN, -1 = BANKRUPT
@@ -351,6 +354,9 @@ class WheelOfFortuneGame {
             
             container.appendChild(playerDiv);
         });
+        
+        // Update strategy advisor for human players
+        this.updateStrategyAdvisor();
     }
 
     updateRoundDisplay() {
@@ -362,6 +368,116 @@ class WheelOfFortuneGame {
 
     getCurrentPlayer() {
         return this.gameState.players[this.gameState.currentPlayerIndex];
+    }
+
+    updateStrategyAdvisor() {
+        // Only show strategy advisor during active gameplay and for human players
+        if (this.gameState.gamePhase !== 'playing' || !this.gameState.puzzle) {
+            return;
+        }
+
+        const currentPlayer = this.getCurrentPlayer();
+        if (!currentPlayer || currentPlayer.type !== 'human') {
+            return;
+        }
+
+        // Prepare game state for optimizer
+        const opponentScores = this.gameState.players
+            .filter(p => p !== currentPlayer)
+            .map(p => p.totalScore + p.roundScore);
+
+        const gameStateForOptimizer = {
+            currentMoney: currentPlayer.roundScore,
+            revealedLetters: this.gameState.revealedLetters,
+            usedLetters: this.gameState.usedLetters,
+            opponentScores: opponentScores,
+            roundsRemaining: this.gameState.totalRounds - this.gameState.currentRound + 1,
+            category: this.gameState.puzzle.category
+        };
+
+        // Get optimal strategy
+        const strategy = this.moneyOptimizer.getOptimalStrategy(gameStateForOptimizer);
+        const advice = this.moneyOptimizer.formatAdvice(strategy);
+
+        // Update UI elements
+        this.updateStrategyUI(advice, strategy);
+    }
+
+    updateStrategyUI(advice, strategy) {
+        // Update recommendation action
+        const actionElement = document.getElementById('recommendedAction');
+        if (actionElement) {
+            let actionText = advice.action;
+            if (actionText === 'BUY_VOWEL') actionText = 'BUY VOWEL';
+            actionElement.textContent = actionText;
+            
+            // Color code the recommendation
+            actionElement.className = 'recommendation-action';
+            if (actionText === 'SOLVE') {
+                actionElement.style.color = '#00ff00'; // Green for solve
+            } else if (actionText === 'BUY VOWEL') {
+                actionElement.style.color = '#ffaa00'; // Orange for vowel
+            } else {
+                actionElement.style.color = '#ffd700'; // Gold for spin
+            }
+        }
+
+        // Update confidence level
+        const confidenceElement = document.getElementById('confidenceLevel');
+        if (confidenceElement) {
+            const expectedValue = strategy.analysis.spin.expectedValue;
+            let confidence = 'Medium Confidence';
+            if (Math.abs(expectedValue) > 200) {
+                confidence = 'High Confidence';
+            } else if (Math.abs(expectedValue) < 50) {
+                confidence = 'Low Confidence';
+            }
+            confidenceElement.textContent = confidence;
+        }
+
+        // Update reasoning
+        const reasoningList = document.getElementById('reasoningList');
+        if (reasoningList) {
+            reasoningList.innerHTML = '';
+            advice.reasoning.forEach(reason => {
+                const li = document.createElement('li');
+                li.textContent = reason;
+                reasoningList.appendChild(li);
+            });
+        }
+
+        // Update wheel statistics
+        const bankruptChance = document.getElementById('bankruptChance');
+        if (bankruptChance) {
+            bankruptChance.textContent = advice.wheelStats.bankruptChance;
+        }
+
+        const loseTurnChance = document.getElementById('loseTurnChance');
+        if (loseTurnChance) {
+            loseTurnChance.textContent = advice.wheelStats.loseTurnChance;
+        }
+
+        const expectedSpinValue = document.getElementById('expectedSpinValue');
+        if (expectedSpinValue) {
+            expectedSpinValue.textContent = advice.wheelStats.expectedSpinValue;
+        }
+
+        // Update letter suggestions
+        const suggestedConsonants = document.getElementById('suggestedConsonants');
+        if (suggestedConsonants) {
+            suggestedConsonants.innerHTML = '';
+            advice.letterSuggestions.consonants.forEach(consonant => {
+                const span = document.createElement('span');
+                span.className = 'letter-suggestion';
+                span.textContent = consonant;
+                suggestedConsonants.appendChild(span);
+            });
+        }
+
+        const suggestedVowel = document.getElementById('suggestedVowel');
+        if (suggestedVowel) {
+            suggestedVowel.textContent = advice.letterSuggestions.vowel;
+        }
     }
 
     // Calculate the rotation angle needed to land on a specific wheel section
