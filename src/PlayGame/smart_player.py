@@ -23,7 +23,7 @@ def computer_turn_smart(showing, winnings, previous_guesses, turn):
     player_winnings = winnings[turn % 3]
     
     # Use smart decision function
-    decision, reasoning = should_spin_or_buy_vowel(
+    decision, reasoning, best_consonant = should_spin_or_buy_vowel(
         showing, player_winnings, previous_guesses
     )
     
@@ -54,7 +54,7 @@ def computer_turn_smart(showing, winnings, previous_guesses, turn):
             winnings[turn % 3] = 0
             return "_", 0
         else:
-            consonant = get_best_consonant_guess(showing, previous_guesses)
+            consonant = best_consonant  # Use the pre-calculated best consonant
             print(f"Smart AI guessed consonant: {consonant}")
             return consonant, dollar
 
@@ -67,7 +67,7 @@ def computer_turn_smart_conservative(showing, winnings, previous_guesses, turn):
     player_winnings = winnings[turn % 3]
     
     # Modify the decision by being more conservative
-    decision, reasoning = should_spin_or_buy_vowel(
+    decision, reasoning, best_consonant = should_spin_or_buy_vowel(
         showing, player_winnings, previous_guesses
     )
     
@@ -99,7 +99,7 @@ def computer_turn_smart_conservative(showing, winnings, previous_guesses, turn):
             winnings[turn % 3] = 0
             return "_", 0
         else:
-            consonant = get_best_consonant_guess(showing, previous_guesses)
+            consonant = best_consonant  # Use the pre-calculated best consonant
             print(f"Conservative AI guessed consonant: {consonant}")
             return consonant, dollar
 
@@ -111,7 +111,7 @@ def computer_turn_smart_aggressive(showing, winnings, previous_guesses, turn):
     
     player_winnings = winnings[turn % 3]
     
-    decision, reasoning = should_spin_or_buy_vowel(
+    decision, reasoning, best_consonant = should_spin_or_buy_vowel(
         showing, player_winnings, previous_guesses
     )
     
@@ -141,7 +141,7 @@ def computer_turn_smart_aggressive(showing, winnings, previous_guesses, turn):
             winnings[turn % 3] = 0
             return "_", 0
         else:
-            consonant = get_best_consonant_guess(showing, previous_guesses)
+            consonant = best_consonant  # Use the pre-calculated best consonant
             print(f"Aggressive AI guessed consonant: {consonant}")
             return consonant, dollar
 

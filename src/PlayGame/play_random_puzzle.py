@@ -5,6 +5,11 @@ import time
 import ascii_wheel
 from smart_player import computer_turn_smart, computer_turn_smart_conservative, computer_turn_smart_aggressive
 from optimized_player import computer_turn_optimized, computer_turn_optimized_aggressive, computer_turn_optimized_conservative, get_human_suggestion
+from solve_timing_ai import (
+    computer_turn_solve_timing_conservative, 
+    computer_turn_solve_timing_aggressive, 
+    computer_turn_solve_timing_balanced
+)
 
 def computer_turn(showing, winnings, previous_guesses, turn):
   # Guess in the order of the alphabet
@@ -303,8 +308,7 @@ def human_turn(showing, winnings, previous_guesses, turn, puzzle):
     solve = input("Your guess to solve: ...... ").upper() # TODO: clean
     if solve == puzzle:
       print("YOU WIN!")
-      # Add $1000 bonus for solving
-      winnings[turn % 3] += 1000
+      winnings[turn % 3] += 1000  # Add $1000 bonus for solving
       print("Player", turn % 3, "won!")
       print("Final winnings with $1000 solve bonus:", winnings)
       is_solved = True
@@ -433,15 +437,26 @@ def play_random_game(type_of_players):
       guess, dollar = computer_turn_morse(showing, winnings, previous_guesses, turn)
     elif type_of_player == "oxford":
       guess, dollar = computer_turn_oxford(showing, winnings, previous_guesses, turn)
-    elif type_of_player == "trigram":
-      guess, dollar = computer_turn_trigrams_bigrams(showing, winnings, previous_guesses, turn)
+    # Main AI types
     elif type_of_player == "smart":
-      guess, dollar = computer_turn_smart(showing, winnings, previous_guesses, turn)
+      guess, dollar = computer_turn_optimized(showing, winnings, previous_guesses, turn)
     elif type_of_player == "conservative":
-      guess, dollar = computer_turn_smart_conservative(showing, winnings, previous_guesses, turn)
+      guess, dollar = computer_turn_optimized_conservative(showing, winnings, previous_guesses, turn)
     elif type_of_player == "aggressive":
-      guess, dollar = computer_turn_smart_aggressive(showing, winnings, previous_guesses, turn)
-    elif type_of_player == "optimized":
+      guess, dollar = computer_turn_optimized_aggressive(showing, winnings, previous_guesses, turn)
+    
+    # Advanced solve timing variants (integrated into main three)
+    elif type_of_player == "solve_timing":
+      guess, dollar = computer_turn_solve_timing_balanced(showing, winnings, previous_guesses, turn, puzzle, game_type)
+    elif type_of_player == "solve_conservative":
+      guess, dollar = computer_turn_solve_timing_conservative(showing, winnings, previous_guesses, turn, puzzle, game_type)
+    elif type_of_player == "solve_aggressive":
+      guess, dollar = computer_turn_solve_timing_aggressive(showing, winnings, previous_guesses, turn, puzzle, game_type)
+    
+    # Legacy support for old player types
+    elif type_of_player in ["trigram", "basic", "computer"]:
+      guess, dollar = computer_turn(showing, winnings, previous_guesses, turn)
+    elif type_of_player in ["optimized", "opt_balanced"]:
       guess, dollar = computer_turn_optimized(showing, winnings, previous_guesses, turn)
     elif type_of_player == "opt_aggressive":
       guess, dollar = computer_turn_optimized_aggressive(showing, winnings, previous_guesses, turn)
@@ -463,8 +478,20 @@ def play_random_game(type_of_players):
     #  guess, dollar = computer_turn_morse(showing, winnings, previous_guesses, turn)
 
 
+    # Check if this is a solve attempt
+    if guess.startswith('SOLVE:'):
+      solve_guess = guess[6:]  # Remove 'SOLVE:' prefix
+      print(f"Player {turn % 3} attempts to solve: '{solve_guess}'")
+      if solve_guess == puzzle:
+        winnings[turn % 3] += 1000  # Add $1000 bonus for solving
+        print(f"CORRECT! Player {turn % 3} solved the puzzle!")
+        print("Final winnings:", winnings)
+        return turn % 3  # Return winner
+      else:
+        print("Wrong solution ... next player")
+        turn = turn + 1
     # Double check that guess has not already been said (I've seen it on TV before)
-    if guess in previous_guesses and guess != "_":
+    elif guess in previous_guesses and guess != "_":
       print("Sorry, that's already been guessed .... next player")
       turn = turn + 1
     else:
@@ -480,13 +507,18 @@ def play_random_game(type_of_players):
       elif len(correct_places) < 1:
         print("Sorry, not in the puzzle ... next player")
         turn = turn + 1
-    winnings[(turn % 3)] = winnings[(turn % 3)] + (dollar * len(correct_places))
-    for correct_letter in correct_places:
-      showing = showing[:correct_letter] + guess + showing[correct_letter + 1:]
-    print("Winnings:", winnings)
-    print("Previous guesses:", previous_guesses)
-    print("The clue is:", clue)
-    print_board(showing)
+      else:
+        # Add winnings for correct letter guesses
+        winnings[(turn % 3)] = winnings[(turn % 3)] + (dollar * len(correct_places))
+        for correct_letter in correct_places:
+          showing = showing[:correct_letter] + guess + showing[correct_letter + 1:]
+    
+    # Only print status if we're not solving
+    if not guess.startswith('SOLVE:'):
+      print("Winnings:", winnings)
+      print("Previous guesses:", previous_guesses)
+      print("The clue is:", clue)
+      print_board(showing)
 
   while not is_solved:
     print("Player", turn % 3, "has a chance to solve")
@@ -498,8 +530,7 @@ def play_random_game(type_of_players):
       solve = showing
   
     if solve == puzzle:
-      # Add $1000 bonus for solving
-      winnings[turn % 3] += 1000
+      winnings[turn % 3] += 1000  # Add $1000 bonus for solving
       print("Player", turn % 3, "won!")
       print("Final winnings with $1000 solve bonus:", winnings)
       is_solved = True
@@ -509,16 +540,33 @@ def play_random_game(type_of_players):
       print("The clue is:", clue)
       print_board(showing)
 
+def show_player_types():
+    """Display available player types and their descriptions."""
+    print("\n=== Available Player Types ===")
+    print("Main AI Types:")
+    print("  smart          - Advanced AI with strategic analysis (balanced)")
+    print("  conservative   - Conservative AI with risk-averse play")
+    print("  aggressive     - Aggressive AI with high risk-taking")
+    print("\nAdvanced Solve Timing AI:")
+    print("  solve_timing   - AI that strategically times solve attempts (balanced)")
+    print("  solve_conservative - Solve timing AI with conservative solving")
+    print("  solve_aggressive - Solve timing AI with aggressive solving")
+    print("\nSpecial Types:")
+    print("  human          - Human player")
+    print("\nLegacy Types (still supported):")
+    print("  computer, basic, trigram, optimized, opt_aggressive, opt_conservative")
+    print("\nExample usage:")
+    print("  python play_random_puzzle.py smart conservative aggressive")
+    print("  python play_random_puzzle.py solve_timing smart conservative")
+    print("  python play_random_puzzle.py aggressive solve_aggressive smart\n")
+
 if __name__ == '__main__':
   type_of_players = sys.argv[1:]
   print(type_of_players)
   if len(type_of_players) != 3:
-    print("There should be 3 players ... creating a default game with optimized AI players")
-    print("Available player types:")
-    print("  Basic: human, morse, oxford, trigram")
-    print("  Smart: smart, conservative, aggressive")
-    print("  Optimized: optimized, opt_conservative, opt_aggressive")
-    type_of_players = ["human", "optimized", "opt_conservative"] # Updated default with optimized players
+    print("There should be 3 players ... creating a default game with modern AI players")
+    show_player_types()
+    type_of_players = ["smart", "conservative", "aggressive"] # Main three AI types
     time.sleep(3)
   #type_of_players = ["morse", "morse", "oxford"] # TODO: Set with command line
 

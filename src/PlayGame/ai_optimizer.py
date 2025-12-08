@@ -16,6 +16,7 @@ import random
 import math
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
+from pattern_analyzer import WordPatternAnalyzer
 
 
 @dataclass
@@ -87,7 +88,7 @@ class WheelOfFortuneOptimizer:
         self.wheel_values = [0, -1, 500, 550, 600, 650, 700, 750, 800, 850, 900, -1, 
                            500, 550, 600, 650, 700, 750, 800, 850, 900, 500, 550, 600]
         
-        # English letter frequencies
+        # English letter frequencies (fallback)
         self.vowel_frequencies = {'A': 0.082, 'E': 0.127, 'I': 0.070, 'O': 0.075, 'U': 0.028}
         self.consonant_frequencies = {
             'T': 0.091, 'N': 0.067, 'S': 0.063, 'H': 0.061, 'R': 0.060,
@@ -95,6 +96,9 @@ class WheelOfFortuneOptimizer:
             'F': 0.022, 'G': 0.020, 'Y': 0.020, 'P': 0.019, 'B': 0.013,
             'V': 0.010, 'K': 0.008, 'J': 0.001, 'X': 0.001, 'Q': 0.001, 'Z': 0.001
         }
+        
+        # Pattern analyzer for intelligent consonant suggestions
+        self.pattern_analyzer = WordPatternAnalyzer()
         
         # Vowel cost
         self.vowel_cost = 250
@@ -152,9 +156,18 @@ class WheelOfFortuneOptimizer:
         estimated_vowels = max(1, int(blank_count * 0.4))
         estimated_consonants = blank_count - estimated_vowels
         
-        # Best letter recommendations
+        # Best letter recommendations using pattern analysis
         best_vowel = max(available_vowels.keys(), key=lambda x: available_vowels[x]) if available_vowels else None
-        best_consonant = max(available_consonants.keys(), key=lambda x: available_consonants[x]) if available_consonants else None
+        
+        # Use pattern analyzer for intelligent consonant suggestion
+        pattern_suggestions = self.pattern_analyzer.get_top_consonant_suggestions(
+            game_state.showing, game_state.previous_guesses, num_suggestions=1
+        )
+        best_consonant = pattern_suggestions[0][0] if pattern_suggestions else None
+        
+        # Fallback to frequency-based if pattern analysis fails
+        if not best_consonant and available_consonants:
+            best_consonant = max(available_consonants.keys(), key=lambda x: available_consonants[x])
         
         return LetterAnalysis(
             vowel_probability=available_vowels,
@@ -171,14 +184,29 @@ class WheelOfFortuneOptimizer:
         # Get the best consonant and its estimated frequency in the puzzle
         best_consonant = letter_analysis.best_consonant
         
-        # Estimate probability this consonant appears in the puzzle
-        # Use pattern analysis if available, otherwise use general frequency
-        consonant_prob = letter_analysis.consonant_probability.get(best_consonant, 0.05)
+        # If no consonants available, return very low value
+        if not letter_analysis.consonant_probability:
+            return -1000
         
-        # Estimate number of times this consonant appears (based on puzzle length and frequency)
-        puzzle_length = len(game_state.showing.replace(' ', '').replace('_', ''))
-        total_puzzle_length = len(game_state.showing.replace(' ', ''))
-        estimated_occurrences = max(1, total_puzzle_length * consonant_prob * 0.6)  # Conservative estimate
+        # Calculate probability-weighted expected letters for available consonants
+        total_available_freq = sum(letter_analysis.consonant_probability.values())
+        if total_available_freq == 0:
+            return -1000
+            
+        # Normalize frequencies for available letters only
+        normalized_freq = {letter: freq / total_available_freq 
+                          for letter, freq in letter_analysis.consonant_probability.items()}
+        
+        # Estimate letters revealed based on best available consonant
+        best_consonant_freq = normalized_freq.get(letter_analysis.best_consonant, 0.05)
+        
+        # More realistic estimate: base it on puzzle completion and available letters
+        blank_count = game_state.showing.count('_')
+        completion_ratio = 1 - (blank_count / max(1, len(re.sub(r'[^A-Z_]', '', game_state.showing))))
+        
+        # As puzzle gets more complete, fewer letters per guess expected
+        base_letters_estimate = max(1, 3 - (completion_ratio * 2))
+        estimated_occurrences = min(blank_count, base_letters_estimate * best_consonant_freq * 1.5)
         
         # Expected value calculation:
         # P(success) * average_wheel_value * estimated_letter_count - P(fail) * penalties
@@ -206,12 +234,25 @@ class WheelOfFortuneOptimizer:
         if not letter_analysis.best_vowel or not letter_analysis.vowel_probability:
             return -float('inf')  # No vowels available
         
-        # Estimate probability that vowel appears in puzzle
-        vowel_density = letter_analysis.expected_vowel_count / max(1, game_state.showing.count('_'))
-        best_vowel_freq = letter_analysis.vowel_probability.get(letter_analysis.best_vowel, 0.1)
+        # Normalize frequencies for available vowels only
+        total_available_vowel_freq = sum(letter_analysis.vowel_probability.values())
+        if total_available_vowel_freq == 0:
+            return -float('inf')
+            
+        normalized_vowel_freq = {letter: freq / total_available_vowel_freq 
+                                for letter, freq in letter_analysis.vowel_probability.items()}
         
-        # Expected letters revealed
-        expected_letters = vowel_density * best_vowel_freq * 3  # Conservative multiplier
+        # Estimate probability that vowel appears in puzzle
+        blank_count = game_state.showing.count('_')
+        completion_ratio = 1 - (blank_count / max(1, len(re.sub(r'[^A-Z_]', '', game_state.showing))))
+        
+        # More realistic vowel density based on remaining blanks and completion
+        vowel_density = letter_analysis.expected_vowel_count / max(1, blank_count)
+        best_vowel_freq = normalized_vowel_freq.get(letter_analysis.best_vowel, 0.1)
+        
+        # Expected letters revealed - more conservative as puzzle progresses
+        base_vowel_estimate = max(1, 2.5 - (completion_ratio * 1.5))
+        expected_letters = min(blank_count, vowel_density * best_vowel_freq * base_vowel_estimate)
         
         # Value per letter revealed (helps with puzzle completion)
         letter_value = 150  # Arbitrary value for puzzle progress
@@ -287,12 +328,26 @@ class WheelOfFortuneOptimizer:
         risk_level = 'medium'
         letter_suggestion = None  # Initialize letter suggestion
         
+        # Get multiple consonant suggestions for enhanced reasoning
+        consonant_suggestions = self.pattern_analyzer.get_top_consonant_suggestions(
+            game_state.showing, game_state.previous_guesses, num_suggestions=3
+        )
+        
+        best_consonant_backup = consonant_suggestions[0][0] if consonant_suggestions else (letter_analysis.best_consonant or 'T')
+        best_vowel_backup = letter_analysis.best_vowel or 'E'
+        
+        # Format consonant suggestions for reasoning
+        if len(consonant_suggestions) >= 2:
+            consonant_info = f"Top consonants: {consonant_suggestions[0][0]} ({consonant_suggestions[0][2]}), {consonant_suggestions[1][0]} ({consonant_suggestions[1][2]})"
+        else:
+            consonant_info = f"Best consonant: {best_consonant_backup}"
+        
         # Action-specific analysis
         if best_action == 'spin':
             reasoning.append(f"Spinning has highest expected value: ${best_ev:.0f}")
             reasoning.append(f"Wheel success probability: {wheel_analysis.success_probability:.1%}")
             reasoning.append(f"Bankruptcy risk: {wheel_analysis.bankruptcy_probability:.1%}")
-            reasoning.append(f"Expected consonant: {letter_analysis.best_consonant}")
+            reasoning.append(consonant_info)
             
             if wheel_analysis.risk_score > 0.3:
                 risk_level = 'high'
@@ -301,23 +356,25 @@ class WheelOfFortuneOptimizer:
                 risk_level = 'low'
                 confidence += 0.1
                 
-            letter_suggestion = letter_analysis.best_consonant or 'T'  # Fallback to T
+            letter_suggestion = best_consonant_backup
             
         elif best_action == 'buy_vowel':
             reasoning.append(f"Buying vowel has highest expected value: ${best_ev:.0f}")
             reasoning.append(f"Estimated vowels remaining: {letter_analysis.expected_vowel_count:.1f}")
-            reasoning.append(f"Best vowel to buy: {letter_analysis.best_vowel}")
+            reasoning.append(f"Best vowel to buy: {best_vowel_backup}")
             reasoning.append(f"Cost: ${self.vowel_cost}")
+            reasoning.append(f"If spinning instead: {consonant_info}")
             
             risk_level = 'low'  # Buying vowels is low risk
             confidence += 0.1
-            letter_suggestion = letter_analysis.best_vowel or 'E'  # Fallback to E
+            letter_suggestion = best_vowel_backup
             
         else:  # solve
             completion_ratio = (len(re.sub(r'[^A-Z_]', '', game_state.showing)) - game_state.showing.count('_')) / len(re.sub(r'[^A-Z_]', '', game_state.showing))
             reasoning.append(f"Solving has highest expected value: ${best_ev:.0f}")
             reasoning.append(f"Puzzle completion: {completion_ratio:.1%}")
             reasoning.append(f"Potential total winnings: ${game_state.player_winnings + self.solve_bonus}")
+            reasoning.append(f"If spinning instead: {consonant_info}")
             
             if completion_ratio > 0.8:
                 risk_level = 'low'
