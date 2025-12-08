@@ -6,6 +6,7 @@ Decides whether to spin the wheel or buy a vowel based on game state analysis.
 import re
 import random
 from typing import Tuple, Dict, List
+from pattern_analyzer import WordPatternAnalyzer
 
 
 def should_spin_or_buy_vowel(
@@ -13,7 +14,7 @@ def should_spin_or_buy_vowel(
     winnings: int,
     previous_guesses: List[str],
     next_letter_candidate: str = None
-) -> Tuple[str, str]:
+) -> Tuple[str, str, str]:
     """
     Intelligent decision function for Wheel of Fortune gameplay.
     
@@ -24,20 +25,32 @@ def should_spin_or_buy_vowel(
         next_letter_candidate: The letter we're considering guessing (optional)
     
     Returns:
-        Tuple of (decision, reasoning) where decision is 'spin', 'buy_vowel', or 'solve'
-        and reasoning explains the decision logic
+        Tuple of (decision, reasoning, best_consonant) where decision is 'spin', 'buy_vowel', or 'solve',
+        reasoning explains the decision logic, and best_consonant is always provided as backup
     """
+    
+    # Get multiple consonant suggestions for enhanced reasoning
+    consonant_suggestions = get_multiple_consonant_suggestions(showing, previous_guesses, 3)
+    best_consonant = consonant_suggestions[0][0] if consonant_suggestions else get_best_consonant_guess(showing, previous_guesses)
+    
+    # Format consonant suggestions for reasoning
+    consonant_info = ""
+    if len(consonant_suggestions) >= 2:
+        top_suggestions = [f"{c} ({explanation})" for c, _, explanation in consonant_suggestions[:2]]
+        consonant_info = f"Top consonants: {', '.join(top_suggestions)}"
+    else:
+        consonant_info = f"Best consonant: {best_consonant}"
     
     # Analyze current game state
     game_state = analyze_game_state(showing, previous_guesses)
     
     # If we can't afford a vowel, we must spin
     if winnings < 250:
-        return 'spin', "Insufficient funds to buy vowel ($250 required)"
+        return 'spin', f"Insufficient funds to buy vowel ($250 required). {consonant_info}", best_consonant
     
     # If puzzle is nearly complete (>80% revealed), consider solving
     if game_state['completion_ratio'] > 0.8:
-        return 'solve', f"Puzzle is {game_state['completion_ratio']:.1%} complete - time to solve"
+        return 'solve', f"Puzzle is {game_state['completion_ratio']:.1%} complete - time to solve. If spinning instead: {consonant_info}", best_consonant
     
     # Calculate expected values and risks
     spin_analysis = analyze_spin_risk()
@@ -49,9 +62,10 @@ def should_spin_or_buy_vowel(
     )
     
     if decision_score['buy_vowel'] > decision_score['spin']:
-        return 'buy_vowel', decision_score['reasoning']
+        best_vowel = get_best_vowel_guess(showing, previous_guesses)
+        return 'buy_vowel', f"{decision_score['reasoning']}. If spinning instead: {consonant_info}", best_consonant
     else:
-        return 'spin', decision_score['reasoning']
+        return 'spin', f"{decision_score['reasoning']}. {consonant_info}", best_consonant
 
 
 def analyze_game_state(showing: str, previous_guesses: List[str]) -> Dict:
@@ -101,11 +115,11 @@ def analyze_spin_risk() -> Dict:
     total_segments = len(wheel_values)
     
     return {
-        'expected_value': sum(positive_values) / total_segments,
+        'expected_value': sum(positive_values) / total_segments,  # Expected gain per spin
         'lose_turn_probability': lose_turn_count / total_segments,
         'bankrupt_probability': bankrupt_count / total_segments,
         'success_probability': len(positive_values) / total_segments,
-        'average_positive_value': sum(positive_values) / len(positive_values)
+        'average_positive_value': sum(positive_values) / len(positive_values) if positive_values else 0
     }
 
 
@@ -153,12 +167,17 @@ def calculate_decision_score(
     
     # Factor 1: Expected value
     # Spinning: expected wheel value * probability of success * estimated consonants
+    # Account for bankruptcy risk by reducing expected value
     spin_expected = (spin_analysis['average_positive_value'] * 
                     spin_analysis['success_probability'] * 
                     min(3, game_state['estimated_remaining_consonants']))
     
+    # Subtract expected loss from bankruptcy (current winnings * bankruptcy probability)
+    bankruptcy_risk = winnings * spin_analysis['bankrupt_probability']
+    spin_expected = max(0, spin_expected - bankruptcy_risk)
+    
     # Buying vowel: fixed cost but guaranteed if vowels exist
-    vowel_expected = vowel_analysis['expected_letters'] * 100  # Arbitrary value per letter
+    vowel_expected = vowel_analysis['expected_letters'] * 150  # Higher value per vowel
     
     spin_score += spin_expected * 0.3
     buy_vowel_score += vowel_expected * 0.3
@@ -221,9 +240,16 @@ def get_best_vowel_guess(showing: str, previous_guesses: List[str]) -> str:
 
 
 def get_best_consonant_guess(showing: str, previous_guesses: List[str]) -> str:
-    """Determine the best consonant to guess based on patterns and frequency."""
+    """Determine the best consonant to guess based on pattern analysis and word completion."""
     
-    # Common consonant frequencies
+    # Use pattern analyzer for intelligent suggestions
+    pattern_analyzer = WordPatternAnalyzer()
+    suggestions = pattern_analyzer.get_top_consonant_suggestions(showing, previous_guesses, num_suggestions=1)
+    
+    if suggestions:
+        return suggestions[0][0]  # Return the top suggestion
+    
+    # Fallback to frequency-based approach if pattern analysis fails
     consonant_frequencies = {
         'T': 0.091, 'N': 0.067, 'S': 0.063, 'H': 0.061, 'R': 0.060,
         'D': 0.043, 'L': 0.040, 'C': 0.028, 'M': 0.024, 'W': 0.024,
@@ -231,15 +257,20 @@ def get_best_consonant_guess(showing: str, previous_guesses: List[str]) -> str:
         'V': 0.010, 'K': 0.008, 'J': 0.001, 'X': 0.001, 'Q': 0.001, 'Z': 0.001
     }
     
-    # Filter available consonants
     available_consonants = {c: f for c, f in consonant_frequencies.items() 
                            if c not in previous_guesses}
     
     if not available_consonants:
-        return 'T'  # Fallback
+        return 'T'  # Ultimate fallback
     
-    # Return most frequent available consonant
     return max(available_consonants.keys(), key=lambda x: available_consonants[x])
+
+
+def get_multiple_consonant_suggestions(showing: str, previous_guesses: List[str], num_suggestions: int = 3) -> List[Tuple[str, float, str]]:
+    """Get multiple consonant suggestions with explanations for enhanced AI reasoning."""
+    
+    pattern_analyzer = WordPatternAnalyzer()
+    return pattern_analyzer.get_top_consonant_suggestions(showing, previous_guesses, num_suggestions)
 
 
 # Example usage and testing
@@ -275,7 +306,7 @@ if __name__ == "__main__":
         print(f"Winnings: ${scenario['winnings']}")
         print(f"Previous guesses: {scenario['previous_guesses']}")
         
-        decision, reasoning = should_spin_or_buy_vowel(
+        decision, reasoning, best_consonant = should_spin_or_buy_vowel(
             scenario['showing'],
             scenario['winnings'],
             scenario['previous_guesses']
@@ -283,10 +314,8 @@ if __name__ == "__main__":
         
         print(f"Decision: {decision.upper()}")
         print(f"Reasoning: {reasoning}")
+        print(f"Best consonant (always provided): {best_consonant}")
         
         if decision == 'buy_vowel':
             best_vowel = get_best_vowel_guess(scenario['showing'], scenario['previous_guesses'])
             print(f"Recommended vowel: {best_vowel}")
-        elif decision == 'spin':
-            best_consonant = get_best_consonant_guess(scenario['showing'], scenario['previous_guesses'])
-            print(f"Recommended consonant: {best_consonant}")

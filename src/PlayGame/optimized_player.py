@@ -66,6 +66,14 @@ class OptimizedPlayer:
         for reason in recommendation.reasoning[:3]:  # Show top 3 reasons
             print(f"  • {reason}")
         
+        # Always show consonant suggestion if not already shown
+        consonant_shown = any('consonant' in reason.lower() for reason in recommendation.reasoning[:3])
+        if not consonant_shown and len(recommendation.reasoning) > 3:
+            for reason in recommendation.reasoning[3:]:
+                if 'consonant' in reason.lower():
+                    print(f"  • {reason}")
+                    break
+        
         # Execute the decision
         return self._execute_decision(adjusted_action, recommendation, winnings, turn, previous_guesses)
     
